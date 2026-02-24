@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Township Box</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: 'Courier New', Courier, monospace;
+            user-select: none;
+        }
+        canvas {
+            display: block;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .panel {
+            background: rgba(20, 20, 20, 0.85);
+            border: 2px solid #444;
+            border-radius: 8px;
+            color: white;
+            padding: 10px;
+            pointer-events: auto;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+        }
+        #top-bar {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .res { display: flex; align-items: center; gap: 5px; }
+        .res span { color: #aaa; font-size: 14px; }
+
+        #build-menu {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+        }
+        .build-btn {
+            background: #333;
+            border: 2px solid #555;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: 0.2s;
+            text-align: center;
+        }
+        .build-btn:hover { background: #555; }
+        .build-btn.selected { border-color: #ffd700; background: #444; }
+        .build-btn .cost { font-size: 11px; color: #aaa; margin-top: 5px; }
+
+        #info-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 250px;
+            font-size: 14px;
+        }
+        
+        /* Resource Colors */
+        .c-wood { color: #8b5a2b; }
+        .c-stone { color: #a9a9a9; }
+        .c-food { color: #ff6347; }
+        .c-gold { color: #ffd700; }
+        .c-pop { color: #87ceeb; }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="top-bar" class="panel">
+            <div class="res c-pop">👥 <span id="res-pop">0/0</span></div>
+            <div class="res c-food">🍞 <span id="res-food">0</span></div>
+            <div class="res c-wood">🪵 <span id="res-wood">0</span></div>
+            <div class="res c-stone">🪨 <span id="res-stone">0</span></div>
+            <div class="res c-gold">🪙 <span id="res-gold">0</span></div>
+        </div>
+
+        <div id="info-panel" class="panel">
+            <h3 style="margin-top:0; color:#ffd700;">Mechanics:</h3>
+            <p>- Drag to pan camera.<br>- <b>Houses</b> increase Max Pop.<br>- <b>Farms</b> generate Food.<br>- Pop consumes Food.<br>- <b>Lumber Mills</b> must be near Trees.<br>- <b>Mines</b> must be near Mountains.</p>
+            <p id="status-msg" style="color: #ff6347; font-weight: bold;"></p>
+        </div>
+
+        <div id="build-menu" class="panel">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+<script>
+    /** --- ENGINE & CONFIG --- */
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const TILE_SIZE = 32;
+    const CHUNK_SIZE = 32;
+    let camera = { x: 0, y: 0 };
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+    let mouse = { x: 0, y: 0, gx: 0, gy: 0 };
+
+    /** --- DATA STRUCTURES --- */
+    const TILES = {
+        WATER: { id: 0, color: '#3b8cc1' },
+        SAND: { id: 1, color: '#e8cfa6' },
+        GRASS: { id: 2, color: '#68a357' },
+        TREE: { id: 3, color: '#2d6a4f' },
+        MOUNTAIN: { id: 4, color: '#6c757d' }
+    };
+
+    const BUILDINGS = {
+        house: { 
+            name: 'House', icon: '🏠', color: '#e63946', 
+            cost: { wood: 20 }, 
+            desc: '+2 Max Pop' 
+        },
+        farm: { 
+            name: 'Farm', icon: '🌾', color: '#f4a261', 
+            cost: { wood: 10, stone: 5 }, 
+            desc: 'Generates Food' 
+        },
+        lumber: { 
+            name: 'Lumber Mill', icon: '🪚', color: '#8b5a2b', 
+            cost: { wood: 30, gold: 10 }, 
+            desc: 'Needs adj. Trees' 
+        },
+        mine: { 
+            name: 'Mine', icon: '⛏️', color: '#495057', 
+            cost: { wood: 50, stone: 20 }, 
+            desc: 'Needs adj. Mountains' 
+        }
+    };
+
+    let resources = {
+        pop: 2, maxPop: 5,
+        food: 50, wood: 100, stone: 50, gold: 20
+    };
+
+    let map = {}; // Infinite map chunks
+    let buildings = {}; // "x,y" -> buildingId
+    let selectedBuilding = null;
+
+    /** --- MAP GENERATION (Procedural pseudo-noise) --- */
+    function getTile(x, y) {
+        const chunkX = Math.floor(x / CHUNK_SIZE);
+        const chunkY = Math.floor(y / CHUNK_SIZE);
+        const chunkKey = `${chunkX},${chunkY}`;
+
+        if (!map[chunkKey]) generateChunk(chunkX, chunkY);
+        
+        const localX = x - (chunkX * CHUNK_SIZE);
+        const localY = y - (chunkY * CHUNK_SIZE);
+        return map[chunkKey][localX][localY];
+    }
+
+    function generateChunk(cx, cy) {
+        const chunk = [];
+        for (let x = 0; x < CHUNK_SIZE; x++) {
+            chunk[x] = [];
+            for (let y = 0; y < CHUNK_SIZE; y++) {
+                let globalX = cx * CHUNK_SIZE + x;
+                let globalY = cy * CHUNK_SIZE + y;
+                
+                // Very basic pseudo-random terrain generation based on coordinates
+                let noise = Math.sin(globalX * 0.1) + Math.cos(globalY * 0.1) + Math.sin((globalX+globalY)*0.05);
+                
+                let type;
+                if (noise < -0.8) type = TILES.WATER.id;
+                else if (noise < -0.5) type = TILES.SAND.id;
+                else if (noise > 1.2) type = TILES.MOUNTAIN.id;
+                else if (noise > 0.5 && Math.random() > 0.3) type = TILES.TREE.id;
+                else type = TILES.GRASS.id;
+
+                chunk[x][y] = type;
+            }
+        }
+        map[`${cx},${cy}`] = chunk;
+    }
+
+    /** --- UI SETUP --- */
+    function initUI() {
+        const menu = document.getElementById('build-menu');
+        for (const [key, b] of Object.entries(BUILDINGS)) {
+            const btn = document.createElement('div');
+            btn.className = 'build-btn';
+            btn.innerHTML = `
+                <div style="font-size:24px;">${b.icon}</div>
+                <div>${b.name}</div>
+                <div class="cost">
+                    ${Object.entries(b.cost).map(([res, val]) => `${val} ${res}`).join(' | ')}
+                </div>
+            `;
+            btn.onclick = () => {
+                document.querySelectorAll('.build-btn').forEach(el => el.classList.remove('selected'));
+                if (selectedBuilding === key) {
+                    selectedBuilding = null;
+                } else {
+                    selectedBuilding = key;
+                    btn.classList.add('selected');
+                }
+            };
+            menu.appendChild(btn);
+        }
+        updateUI();
+    }
+
+    function updateUI() {
+        document.getElementById('res-pop').innerText = `${Math.floor(resources.pop)}/${resources.maxPop}`;
+        document.getElementById('res-food').innerText = Math.floor(resources.food);
+        document.getElementById('res-wood').innerText = Math.floor(resources.wood);
+        document.getElementById('res-stone').innerText = Math.floor(resources.stone);
+        document.getElementById('res-gold').innerText = Math.floor(resources.gold);
+    }
+
+    function showStatus(msg) {
+        const el = document.getElementById('status-msg');
+        el.innerText = msg;
+        setTimeout(() => el.innerText = '', 2000);
+    }
+
+    /** --- INPUT HANDLING --- */
+    window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+        if (e.button === 0 && !selectedBuilding) {
+            isDragging = true;
+            dragStart = { x: e.clientX - camera.x, y: e.clientY - camera.y };
+        } else if (e.button === 2) {
+            isDragging = true;
+            dragStart = { x: e.clientX - camera.x, y: e.clientY - camera.y };
+        }
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            camera.x = e.clientX - dragStart.x;
+            camera.y = e.clientY - dragStart.y;
+        }
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+        mouse.gx = Math.floor((mouse.x - camera.x) / TILE_SIZE);
+        mouse.gy = Math.floor((mouse.y - camera.y) / TILE_SIZE);
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+        isDragging = false;
+    });
+
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+    canvas.addEventListener('click', (e) => {
+        if (selectedBuilding && !isDragging) {
+            placeBuilding(mouse.gx, mouse.gy, selectedBuilding);
+        }
+    });
+
+    /** --- GAME LOGIC --- */
+    function placeBuilding(x, y, type) {
+        const bInfo = BUILDINGS[type];
+        const tile = getTile(x, y);
+        const key = `${x},${y}`;
+
+        // Rules
+        if (tile === TILES.WATER.id) return showStatus("Can't build on water!");
+        if (buildings[key]) return showStatus("Tile is occupied!");
+
+        // Cost check
+        for (const [res, cost] of Object.entries(bInfo.cost)) {
+            if (resources[res] < cost) return showStatus(`Not enough ${res}!`);
+        }
+
+        // Deduct
+        for (const [res, cost] of Object.entries(bInfo.cost)) {
+            resources[res] -= cost;
+        }
+
+        // Place
+        buildings[key] = type;
+        
+        // Instant effects
+        if (type === 'house') {
+            resources.maxPop += 2;
+        }
+
+        updateUI();
+    }
+
+    function getAdjacentTiles(gx, gy) {
+        return [
+            getTile(gx+1, gy), getTile(gx-1, gy),
+            getTile(gx, gy+1), getTile(gx, gy-1)
+        ];
+    }
+
+    // Main Simulation Tick (1 second)
+    setInterval(() => {
+        let foodProduced = 0;
+        let woodProduced = 0;
+        let stoneProduced = 0;
+        let goldProduced = 0;
+
+        for (const [pos, type] of Object.entries(buildings)) {
+            const [x, y] = pos.split(',').map(Number);
+            const adj = getAdjacentTiles(x, y);
+
+            if (type === 'farm') {
+                foodProduced += 2;
+            } 
+            else if (type === 'lumber') {
+                // +1 wood for every adjacent tree
+                woodProduced += adj.filter(t => t === TILES.TREE.id).length;
+            }
+            else if (type === 'mine') {
+                // +1 stone for mountain, slight chance of gold
+                let mountains = adj.filter(t => t === TILES.MOUNTAIN.id).length;
+                stoneProduced += mountains;
+                if (mountains > 0 && Math.random() > 0.7) goldProduced += 1;
+            }
+        }
+
+        // Apply Population logic
+        let foodNeeded = resources.pop * 0.5; // Each pop eats 0.5 food
+        
+        if (resources.food + foodProduced >= foodNeeded) {
+            resources.food += foodProduced - foodNeeded;
+            // Pop grows if there is space and food
+            if (resources.pop < resources.maxPop) resources.pop += 0.1;
+        } else {
+            // Starvation
+            resources.food = 0;
+            if (resources.pop > 2) resources.pop -= 0.5;
+        }
+
+        // Apply Resources
+        // Only produce if population is fed (mostly)
+        if (resources.food > 0) {
+            resources.wood += woodProduced;
+            resources.stone += stoneProduced;
+            resources.gold += goldProduced;
+        }
+
+        updateUI();
+    }, 1000);
+
+
+    /** --- RENDERING --- */
+    function draw() {
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.save();
+        ctx.translate(camera.x, camera.y);
+
+        // Viewport culling bounds
+        const startX = Math.floor(-camera.x / TILE_SIZE);
+        const startY = Math.floor(-camera.y / TILE_SIZE);
+        const endX = startX + Math.ceil(canvas.width / TILE_SIZE) + 1;
+        const endY = startY + Math.ceil(canvas.height / TILE_SIZE) + 1;
+
+        // Draw Map
+        for (let x = startX; x < endX; x++) {
+            for (let y = startY; y < endY; y++) {
+                const tileId = getTile(x, y);
+                const color = Object.values(TILES).find(t => t.id === tileId).color;
+                
+                ctx.fillStyle = color;
+                ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE + 1, TILE_SIZE + 1); // +1 prevents gaps
+            }
+        }
+
+        // Draw Buildings
+        for (const [pos, type] of Object.entries(buildings)) {
+            const [x, y] = pos.split(',').map(Number);
+            
+            // Culling for buildings
+            if (x >= startX && x <= endX && y >= startY && y <= endY) {
+                const bInfo = BUILDINGS[type];
+                
+                // Building base
+                ctx.fillStyle = bInfo.color;
+                ctx.fillRect(x * TILE_SIZE + 2, y * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                
+                // Emoji icon
+                ctx.font = '18px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(bInfo.icon, x * TILE_SIZE + TILE_SIZE/2, y * TILE_SIZE + TILE_SIZE/2);
+            }
+        }
+
+        // Draw Hover Cursor
+        ctx.strokeStyle = selectedBuilding ? 'rgba(255, 215, 0, 0.8)' : 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(mouse.gx * TILE_SIZE, mouse.gy * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+        ctx.restore();
+        requestAnimationFrame(draw);
+    }
+
+    // Start
+    initUI();
+    draw();
+
+</script>
+</body>
+</html>
