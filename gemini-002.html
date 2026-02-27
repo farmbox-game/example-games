@@ -70,7 +70,7 @@ let animals = [];
 
 function init() {
     const gridEl = document.getElementById('grid');
-    for(let y=0; y<GRID_SIZE=12; y++) {
+    for(let y=0; y<GRID_SIZE==12; y++) {
         for(let x=0; x<12; x++) {
             let type = 'grass';
             if(x==0 && y==0) type = 'house';
@@ -301,4 +301,25 @@ function updatePlayer() {
     p.style.top = player.y * 50 + 'px';
 }
 
-function spawnAnimal(type, x, y) { animals
+function spawnAnimal(type, x, y) { animals.push({x,y,type}); }
+    document.getElementByID('day-val').innerText = gameState.day;
+    document.getElementById('season-val').innerText = gameState.season;
+    document.getElementById('money-val').innerText = gameState.money;
+    document.getElementById('silver-val').innerText = gameState.silver;
+    document.getElementById('gold-val').innerText = gameState.gold;
+    document.getElementById('rep-val').innerText = gameState.rep;
+    document.getElementById('seed-val').innerText = gameState.seeds;
+    document.getElementById('fod-val').innerText = gameState.fodder;
+    document.getElementById('silo-val').innerText = gameState.silos;
+    document.getElementById('irrig-val').innerText = gameState.hasIrrigation ? "ON" : "OFF";
+    
+    let taskStr = gameState.isNight ? "Go to House 🏠 and press Z" : "Work the land!";
+    if(traderIsHere()) taskStr = "TRADER IS HERE! 🚛 Walk to House.";
+    document.getElementById('tasks').innerText = taskStr;
+}
+
+init();
+updatePlayer();
+</script>
+</body>
+</html>
