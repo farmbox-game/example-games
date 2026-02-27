@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Ever-Farm: Prestige Edition</title>
+    <style>
+        :root { --grass: #2e7d32; --dirt: #5d4037; --night: rgba(0,0,50,0.6); }
+        body { background: #1a1a1a; color: white; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; margin: 0; }
+        #game-wrapper { position: relative; margin-top: 20px; border: 10px solid #3e2723; }
+        #grid { display: grid; grid-template-columns: repeat(12, 50px); grid-template-rows: repeat(12, 50px); background: var(--grass); }
+        .tile { width: 50px; height: 50px; border: 0.1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; font-size: 22px; position: relative; }
+        .player { position: absolute; width: 50px; height: 50px; z-index: 10; display: flex; align-items: center; justify-content: center; font-size: 30px; transition: 0.1s; }
+        #night-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background: var(--night); pointer-events: none; opacity: 0; transition: opacity 2s; z-index: 20; }
+        
+        .ui-panel { width: 620px; background: #333; padding: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border: 2px solid #555; }
+        .stats-bar { width: 620px; background: #444; padding: 10px; display: flex; justify-content: space-between; font-weight: bold; border-bottom: 4px solid gold; }
+        .task-list { background: #222; padding: 10px; border-left: 4px solid #ffeb3b; height: 100px; overflow-y: auto; }
+        .btn { background: #5d4037; color: white; border: none; padding: 5px 10px; cursor: pointer; margin: 2px; }
+        .btn:hover { background: #795548; }
+        .trader-window { position: absolute; top: 50px; left: 50px; width: 500px; height: 400px; background: #5d4037; border: 4px solid gold; z-index: 100; display: none; padding: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="stats-bar">
+    <div>Day <span id="day-val">1</span> (<span id="season-val">Spring</span>)</div>
+    <div>💰 $<span id="money-val">50</span> | 🥈<span id="silver-val">0</span> | 🥇<span id="gold-val">0</span></div>
+    <div>Rep: <span id="rep-val">Neutral</span></div>
+</div>
+
+<div id="game-wrapper">
+    <div id="grid"></div>
+    <div id="player" class="player">👩‍🌾</div>
+    <div id="night-overlay"></div>
+
+    <div id="trader-menu" class="trader-window">
+        <h2>The Trader 🚛</h2>
+        <div id="trader-items"></div>
+        <button class="btn" onclick="closeTrader()" style="margin-top:20px;">Close</button>
+    </div>
+</div>
+
+<div class="ui-panel">
+    <div class="controls">
+        <button class="btn" onclick="interact()">Interact (E)</button>
+        <button class="btn" onclick="trySleep()" id="sleep-btn" style="display:none;">Sleep (Z)</button>
+        <button class="btn" onclick="buyLand()">Buy Land ($100)</button>
+        <p style="font-size: 10px;">Use Arrows to move. E to plant/harvest/water.</p>
+    </div>
+    <div class="task-list">
+        <strong>Today's Tasks:</strong>
+        <div id="tasks"></div>
+    </div>
+</div>
+
+<script>
+// --- CORE STATE ---
+const GRID_SIZE = 12;
+let gameState = {
+    day: 1, season: 'Spring', money: 50, silver: 0, gold: 0,
+    seeds: 5, silos: 0, fodder: 10, rep: 50, 
+    isNight: false, timeSec: 0, hasCoat: false
+};
+
+let player = { x: 1, y: 1 };
+let grid = [];
+let animals = []; // {x, y, type, hunger}
+
+// --- INITIALIZATION ---
+function init() {
+    const gridEl = document.getElementById('grid');
+    for(let y=0; y<GRID_SIZE; y++) {
+        for(let x=0; x<GRID_SIZE; x++) {
+            let type = 'grass';
+            if(x==0 && y==0) type = 'house';
+            if(x==2 && y==2) type = 'tilled';
+            
+            let tile = { x, y, type, crop: null, age: 0, watered: false };
+            grid.push(tile);
+            
+            let div = document.createElement('div');
+            div.id = `t-${x}-${y}`;
+            div.className = 'tile';
+            gridEl.appendChild(div);
+            renderTile(tile);
+        }
+    }
+    spawnAnimal('sheep', 10, 10);
+    updateUI();
+    setInterval(tick, 1000);
+}
+
+function renderTile(tile) {
+    const el = document.getElementById(`t-${tile.x}-${tile.y}`);
+    el.style.background = tile.type === 'tilled' ? (tile.watered ? '#3e2723' : '#5d4037') : 
+                          tile.type === 'house' ? '#795548' : '#2e7d32';
+    
+    let emoji = '';
+    if(tile.type === 'house') emoji = '🏠';
+    if(tile.crop) {
+        if(tile.age === 0) emoji = '🌱';
+        if(tile.age === 1) emoji = '🌿';
+        if(tile.age >= 2) emoji = '🌾';
+        if(tile.age > 4) emoji = '🍂';
+    }
+    // Render animals
+    let anim = animals.find(a => a.x === tile.x && a.y === tile.y);
+    if(anim) emoji = anim.type === 'sheep' ? '🐑' : '🐄';
+    
+    el.innerText = emoji;
+}
+
+// --- MOVEMENT & INPUT ---
+window.addEventListener('keydown', e => {
+    if(e.key === 'ArrowUp' && player.y > 0) player.y--;
+    if(e.key === 'ArrowDown' && player.y < GRID_SIZE-1) player.y++;
+    if(e.key === 'ArrowLeft' && player.x > 0) player.x--;
+    if(e.key === 'ArrowRight' && player.x < GRID_SIZE-1) player.x++;
+    if(e.key.toLowerCase() === 'e') interact();
+    if(e.key.toLowerCase() === 'z') trySleep();
+    updatePlayer();
+});
+
+function updatePlayer() {
+    const p = document.getElementById('player');
+    p.style.left = player.x * 50 + 'px';
+    p.style.top = player.y * 50 + 'px';
+}
+
+function interact() {
+    let tile = grid.find(t => t.x === player.x && t.y === player.y);
+    
+    // Water
+    if(tile.type === 'tilled' && !tile.watered) {
+        tile.watered = true;
+    } 
+    // Plant
+    else if(tile.type === 'tilled' && !tile.crop && gameState.seeds > 0) {
+        tile.crop = 'wheat'; tile.age = 0; gameState.seeds--;
+    }
+    // Harvest
+    else if(tile.crop && tile.age >= 2) {
+        if(tile.age <= 4) {
+            gameState.money += (gameState.season === 'Fall' ? 30 : 20);
+            gameState.fodder += 5;
+        }
+        tile.crop = null;
+        tile.watered = false;
+    }
+    // Trader
+    if(tile.type === 'house' && traderIsHere()) openTrader();
+    
+    renderTile(tile);
+    updateUI();
+}
+
+// --- GAME LOOP ---
+function tick() {
+    if(!gameState.isNight) {
+        gameState.timeSec++;
+        if(gameState.timeSec >= 600) { // 10 mins
+            gameState.isNight = true;
+            document.getElementById('night-overlay').style.opacity = 1;
+            document.getElementById('sleep-btn').style.display = 'block';
+        }
+        // Animals roam
+        if(gameState.timeSec % 5 === 0) moveAnimals();
+    }
+}
+
+function trySleep() {
+    if(!gameState.isNight && player.x !== 0 && player.y !== 0) return;
+    nextDay();
+}
+
+function nextDay() {
+    gameState.day++;
+    gameState.isNight = false;
+    gameState.timeSec = 0;
+    document.getElementById('night-overlay').style.opacity = 0;
+    document.getElementById('sleep-btn').style.display = 'none';
+
+    // Season Logic
+    const seasons = ['Spring', 'Summer', 'Fall', 'Winter'];
+    gameState.season = seasons[Math.floor((gameState.day-1)/10) % 4];
+
+    // Winter Cold Check
+    if(gameState.season === 'Winter' && !gameState.hasCoat) {
+        gameState.money -= 10; // Penalty for no coat
+    }
+
+    // Crop Growth
+    grid.forEach(t => {
+        if(t.crop) {
+            if(t.watered) t.age++;
+            else if(gameState.season !== 'Summer') t.age += 0.5; // Grow slower without water
+            t.watered = false; // Reset water daily
+        }
+        renderTile(t);
+    });
+
+    // Animal Upkeep
+    animals.forEach(a => {
+        let need = (gameState.season === 'Winter' ? 2 : 1);
+        if(gameState.fodder >= need) gameState.fodder -= need;
+        else gameState.money -= 5; // Health penalty
+    });
+
+    // Prestige Conversion
+    if(gameState.money >= 1000) {
+        gameState.money -= 1000;
+        gameState.silver++;
+    }
+    if(gameState.silver >= 10) {
+        gameState.silver -= 10;
+        gameState.gold++;
+    }
+
+    updateUI();
+}
+
+// --- TRADER SYSTEM ---
+function traderIsHere() {
+    return (gameState.day >= 4 && (gameState.day-4) % 3 === 0);
+}
+
+function openTrader() {
+    const menu = document.getElementById('trader-menu');
+    const container = document.getElementById('trader-items');
+    menu.style.display = 'block';
+    
+    let priceMod = (gameState.season === 'Winter' ? 1.5 : 1.0);
+    let repMod = (50 / gameState.rep); // Higher rep = lower prices
+
+    container.innerHTML = `
+        <p>Your Rep: ${gameState.rep} (Prices x${repMod.toFixed(1)})</p>
+        <button class="btn" onclick="buyItem('seeds', ${Math.ceil(10 * priceMod * repMod)})">Buy Seeds ($${Math.ceil(10 * priceMod * repMod)})</button>
+        <button class="btn" onclick="buyItem('coat', 100)">Buy Winter Coat ($100)</button>
+        <button class="btn" onclick="adjustRep(10)">Donate $50 (Boost Rep)</button>
+    `;
+}
+
+function buyItem(item, cost) {
+    if(gameState.money >= cost) {
+        gameState.money -= cost;
+        if(item === 'seeds') gameState.seeds += 5;
+        if(item === 'coat') gameState.hasCoat = true;
+        updateUI();
+        openTrader();
+    }
+}
+
+function closeTrader() { document.getElementById('trader-menu').style.display = 'none'; }
+
+function spawnAnimal(type, x, y) { animals.push({x, y, type}); }
+
+function moveAnimals() {
+    animals.forEach(a => {
+        let dir = Math.floor(Math.random()*4);
+        if(dir === 0 && a.y > 0) a.y--;
+        if(dir === 1 && a.y < 11) a.y++;
+        // ... simple random walk ...
+    });
+    grid.forEach(t => renderTile(t));
+}
+
+function updateUI() {
+    document.getElementById('day-val').innerText = gameState.day;
+    document.getElementById('season-val').innerText = gameState.season;
+    document.getElementById('money-val').innerText = gameState.money;
+    document.getElementById('silver-val').innerText = gameState.silver;
+    document.getElementById('gold-val').innerText = gameState.gold;
+    document.getElementById('rep-val').innerText = gameState.rep > 70 ? 'Generous' : (gameState.rep < 30 ? 'Greedy' : 'Neutral');
+    
+    const taskDiv = document.getElementById('tasks');
+    taskDiv.innerHTML = gameState.isNight ? "<li>Go to house and press Z to sleep</li>" : "<li>Water crops and check animals</li>";
+    if(traderIsHere()) taskDiv.innerHTML += "<li>🚛 TRADER IS AT THE HOUSE!</li>";
+    if(gameState.season === 'Fall' && !gameState.hasCoat) taskDiv.innerHTML += "<li>⚠️ Buy a coat before Winter!</li>";
+}
+
+init();
+</script>
+</body>
+</html>
