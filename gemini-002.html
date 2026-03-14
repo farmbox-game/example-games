@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Ever-Farm: Living World</title>
+    <title>Ever-Farm: Master Edition</title>
     <style>
         :root { 
             --grass: #4caf50; --dirt: #5d4037; --pasture: #8bc34a; 
@@ -10,28 +10,25 @@
             --barn: #b71c1c; --coop: #ff9800; --pen: #795548; --pipe: #9e9e9e; --maker: #673ab7;
         }
         body { background: #1a1a1a; color: white; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; margin: 0; overflow: hidden; }
-        .stats-top { width: 100%; background: #222; padding: 10px; display: flex; justify-content: space-around; align-items: center; border-bottom: 4px solid gold; position: sticky; top: 0; z-index: 100; }
+        .stats-top { width: 100%; background: #222; padding: 10px; display: flex; justify-content: space-around; align-items: center; border-bottom: 4px solid gold; z-index: 100; }
         
-        .clock-container { width: 200px; background: #444; height: 20px; border-radius: 10px; position: relative; border: 2px solid #666; }
-        #clock-bar { width: 100%; height: 100%; background: linear-gradient(to right, #ffd700, #ff8c00); border-radius: 8px; transition: width 1s linear; }
+        .clock-container { width: 200px; background: #444; height: 20px; border-radius: 10px; position: relative; border: 2px solid #666; overflow: hidden; }
+        #clock-bar { width: 100%; height: 100%; background: linear-gradient(to right, #ffd700, #ff8c00); transition: width 1s linear; }
         #clock-text { position: absolute; width: 100%; text-align: center; top: 0; font-weight: bold; font-size: 14px; color: white; text-shadow: 1px 1px 2px black; }
 
         #game-container { display: flex; gap: 15px; padding: 15px; }
-        #grid-viewport { position: relative; border: 8px solid #3e2723; width: 720px; height: 720px; background: var(--grass); overflow: hidden; }
+        #grid-viewport { position: relative; border: 8px solid #3e2723; width: 720px; height: 720px; background: var(--grass); }
         #grid { display: grid; grid-template-columns: repeat(20, 36px); grid-template-rows: repeat(20, 36px); }
         .tile { width: 36px; height: 36px; border: 0.1px solid rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: center; font-size: 18px; }
-        .sidebar { width: 300px; background: #2a2a2a; padding: 15px; border-radius: 5px; font-size: 11px; }
-        .player { position: absolute; width: 36px; height: 36px; z-index: 50; display: flex; align-items: center; justify-content: center; font-size: 28px; transition: 0.1s linear; }
         
+        .sidebar { width: 300px; background: #2a2a2a; padding: 15px; border-radius: 5px; font-size: 11px; }
+        .player { position: absolute; width: 36px; height: 36px; z-index: 50; display: flex; align-items: center; justify-content: center; font-size: 28px; transition: 0.05s; pointer-events: none; }
         .tool-slot { padding: 6px; margin: 4px 0; background: #3d3d3d; border: 2px solid #555; cursor: pointer; }
         .active-tool { border-color: gold; background: #4a4a4a; font-weight: bold; color: gold; }
         
-        /* Animated Truck */
-        #trader-truck { position: absolute; font-size: 40px; z-index: 80; top: 324px; left: -100px; transition: left 2s ease-in-out; }
-        #parking-zone { position: absolute; top: 324px; left: 0px; width: 36px; height: 36px; border: 2px dashed rgba(255,215,0,0.4); display: none; }
-
+        .trader-truck { position: absolute; font-size: 40px; z-index: 40; left: 10px; top: 324px; opacity: 0; transition: 0.5s; }
         #night-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background: var(--night); pointer-events: none; opacity: 0; transition: 1s; z-index: 60; }
-        #inv-list { height: 250px; overflow-y:auto; background:#111; padding:5px; border: 1px solid #444; }
+        #inv-list { height: 280px; overflow-y:auto; background:#111; padding:5px; border: 1px solid #444; font-size: 12px; }
         .urgent { animation: flash 1s infinite; }
         @keyframes flash { 50% { background: red; } }
     </style>
@@ -41,28 +38,27 @@
 <div class="stats-top">
     <div>📅 Day <span id="day-val">1</span> (<span id="season-val">Spring</span>)</div>
     <div class="clock-container"><div id="clock-bar"></div><div id="clock-text">🌞 200s</div></div>
-    <div>🥈 <span id="silver-val">0</span> | 🐾 <span id="cap-val">0/0</span></div>
+    <div>🥈 Silver: <span id="silver-val">0</span> | 🐾 Cap: <span id="cap-val">0/0</span></div>
 </div>
 
 <div id="game-container">
     <div id="grid-viewport">
         <div id="grid"></div>
-        <div id="parking-zone"></div>
-        <div id="trader-truck">🚛</div>
         <div id="player" class="player">👩‍🌾</div>
+        <div id="trader-truck" class="trader-truck">🚛</div>
         <div id="night-overlay"></div>
     </div>
     <div class="sidebar">
         <h3>Tools (1-6)</h3>
-        <div id="tool-hoe" class="tool-slot active-tool">1. Hoe</div>
+        <div id="tool-hoe" class="tool-slot active-tool">1. Hoe (Till)</div>
         <div id="tool-plant" class="tool-slot">2. Plant Seed</div>
-        <div id="tool-fence" class="tool-slot">3. Fence</div>
-        <div id="tool-water" class="tool-slot">4. Water</div>
-        <div id="tool-claim" class="tool-slot">5. Action/Harvest</div>
-        <div id="tool-build" class="tool-slot">6. Build</div>
+        <div id="tool-fence" class="tool-slot">3. Fence (Pasture)</div>
+        <div id="tool-water" class="tool-slot">4. Water Can</div>
+        <div id="tool-claim" class="tool-slot">5. Action / Harvest</div>
+        <div id="tool-build" class="tool-slot">6. Build Structure</div>
         <h3>Inventory</h3>
         <div id="inv-list"></div>
-        <p><i>Z: Sleep at 🏠 | Trader at (0,9)</i></p>
+        <p><i>Z: Sleep at 🏠 | Action at 🏠: Forage (if broke)<br>Trader: Every 3rd Day (except Winter) at (0,9)</i></p>
     </div>
 </div>
 
@@ -90,7 +86,7 @@ const ANIMAL_DATA = {
 };
 
 let state = {
-    day: 1, season: 'Spring', time: 0, isNight: false,
+    day: 1, season: 'Spring', time: 0, isNight: false, rep: 50,
     activeTool: 'hoe',
     inventory: { wheat_seed: 5, carrot_seed: 5, fodder: 20, silver: 0 },
     animals: [],
@@ -114,14 +110,15 @@ function init() {
     }
     spawnAnimal();
     updateUI();
-    checkTraderArrival();
-    setInterval(() => {
-        if(!state.isNight) {
-            state.time++;
-            updateClockUI();
-            if(state.time >= DAY_LENGTH) toggleNight(true);
-        }
-    }, 1000);
+    setInterval(tick, 1000);
+}
+
+function tick() {
+    if(!state.isNight) {
+        state.time++;
+        updateClockUI();
+        if(state.time >= DAY_LENGTH) toggleNight(true);
+    }
 }
 
 function updateClockUI() {
@@ -138,28 +135,18 @@ function toggleNight(on) {
     document.getElementById('night-overlay').style.opacity = on ? 1 : 0; 
 }
 
-function checkTraderArrival() {
-    const truck = document.getElementById('trader-truck');
-    const parking = document.getElementById('parking-zone');
-    if (state.day % 3 === 0 && state.season !== 'Winter') {
-        truck.style.left = "0px";
-        parking.style.display = "block";
-    } else {
-        truck.style.left = "-100px";
-        parking.style.display = "none";
-    }
-}
-
 function renderTile(t) {
     const el = document.getElementById(`t-${t.x}-${t.y}`);
     el.style.background = (state.season === 'Winter' && t.type === 'grass') ? 'var(--winter)' : `var(--${t.type})`;
     el.style.boxShadow = t.watered > 0 ? "inset 0 0 8px #2196f3" : "none";
+    
     let icon = t.type === 'house' ? '🏠' : '';
     if(t.building === 'barn') icon = '🏚️';
     if(t.building === 'coop') icon = '🛖';
     if(t.building === 'pen') icon = '🐖';
     if(t.building === 'pipe') icon = '🛠️';
     if(t.building === 'maker') icon = '⚗️';
+    
     if(t.crop) icon = t.age >= CROP_DATA[t.crop].time ? CROP_DATA[t.crop].icon : '🌱';
     let anim = state.animals.find(a => a.x === t.x && a.y === t.y);
     if(anim) icon = ANIMAL_DATA[anim.type].icon;
@@ -169,25 +156,32 @@ function renderTile(t) {
 function handleInteract() {
     let t = world.find(tile => tile.x === player.x && tile.y === player.y);
     
-    // Forage
+    // Forage Logic (Anti-Soft-Lock)
     if(t.type === 'house' && state.activeTool === 'claim') {
         let seeds = Object.keys(state.inventory).filter(k => k.endsWith('_seed')).reduce((a,b) => a + state.inventory[b], 0);
         if(seeds === 0 && state.inventory.silver === 0) {
-            state.inventory.wheat_seed = 3; alert("Found 3 Wheat Seeds!");
+            state.inventory.wheat_seed = 3; alert("Scavenged 3 Wheat Seeds!");
         }
     }
 
-    // Trader menu trigger (Next to truck)
-    if(player.x <= 1 && player.y === 9 && (state.day % 3 === 0)) { openTrader(); return; }
+    // Trader Check (Range 1.5 blocks from 0,9)
+    if(player.x <= 1 && player.y === 9 && (state.day % 3 === 0 && state.season !== 'Winter')) { 
+        openTrader(); 
+        return; 
+    }
 
-    // Seed Maker
+    // Seed Maker Logic (2 crops -> 5 seeds)
     if(t.building === 'maker' && state.activeTool === 'claim') {
         let crops = Object.keys(CROP_DATA).filter(c => (state.inventory[c] || 0) >= 2);
         if(crops.length > 0) {
-            let choice = prompt("Seed Maker: 2 Crops -> 5 Seeds\n" + crops.map((c,i)=>`${i+1}. ${c}`).join('\n'));
+            let choice = prompt("SEED MAKER: 2 Crop -> 5 Seeds\n" + crops.map((c,i)=>`${i+1}. ${c}`).join('\n'));
             let sel = crops[parseInt(choice)-1];
-            if(sel) { state.inventory[sel]-=2; state.inventory[sel+"_seed"]=(state.inventory[sel+"_seed"]||0)+5; }
-        } else alert("Need 2 of a crop!");
+            if(sel) { 
+                state.inventory[sel] -= 2; 
+                state.inventory[sel+"_seed"] = (state.inventory[sel+"_seed"]||0) + 5; 
+                alert(`Made 5 ${sel} seeds!`);
+            }
+        } else alert("Need at least 2 of a crop!");
     }
 
     if(state.activeTool === 'hoe' && t.type === 'grass') t.type = 'dirt';
@@ -197,9 +191,9 @@ function handleInteract() {
     if(state.activeTool === 'plant' && t.type === 'dirt' && !t.crop) {
         let sOwned = Object.keys(state.inventory).filter(k => k.endsWith('_seed') && state.inventory[k] > 0);
         if(sOwned.length > 0) {
-            let choice = prompt("Plant:\n" + sOwned.map((s,i)=>`${i+1}. ${s.split('_')[0]}`).join('\n'));
+            let choice = prompt("Plant:\n" + sOwned.map((s,i)=>`${i+1}. ${s.replace('_seed','')}`).join('\n'));
             let sel = sOwned[parseInt(choice)-1];
-            if(sel) { t.crop = sel.split('_')[0]; t.age = 0; state.inventory[sel]--; }
+            if(sel) { t.crop = sel.replace('_seed',''); t.age = 0; state.inventory[sel]--; }
         }
     }
 
@@ -208,7 +202,7 @@ function handleInteract() {
         if(choice=='1' && state.inventory.silver>=10) { t.building='barn'; state.inventory.silver-=10; state.unlocks.barn=true; }
         if(choice=='2' && state.inventory.silver>=5) { t.building='coop'; state.inventory.silver-=5; state.unlocks.coop=true; }
         if(choice=='3' && state.inventory.silver>=8) { t.building='pen'; state.inventory.silver-=8; state.unlocks.pen=true; }
-        if(choice=='4' && state.inventory.wheat>=15) { t.building='pipe'; state.inventory.wheat-=15; }
+        if(choice=='4' && (state.inventory.wheat||0)>=15) { t.building='pipe'; state.inventory.wheat-=15; }
         if(choice=='5' && state.inventory.silver>=10) { t.building='maker'; state.inventory.silver-=10; }
     }
 
@@ -216,8 +210,9 @@ function handleInteract() {
         let anim = state.animals.find(a => a.x === player.x && a.y === player.y);
         if(anim && !anim.claimed) {
             let cap = Math.floor(world.filter(i => i.type === 'pasture').length / 5);
-            if(state.animals.filter(a => a.claimed).length < cap && state.unlocks[ANIMAL_DATA[anim.type].building]) anim.claimed = true;
-            else alert("Check pasture space/building!");
+            if(state.animals.filter(a => a.claimed).length < cap && state.unlocks[ANIMAL_DATA[anim.type].building]) {
+                anim.claimed = true;
+            } else alert("Need more pasture (1 per 5 tiles) or matching building!");
         }
         if(t.crop && t.age >= CROP_DATA[t.crop].time) { 
             state.inventory[t.crop] = (state.inventory[t.crop] || 0) + CROP_DATA[t.crop].yield; 
@@ -228,59 +223,79 @@ function handleInteract() {
 }
 
 function openTrader() {
-    let res = prompt("TRADER:\n1. Sell 10 Crops (1 Silver)\n2. Buy 10 Seeds (2 Silver)\n3. 10 Wheat -> 20 Fodder");
+    let s = state.season;
+    let menu = `--- TRADER (${s}) ---\n1. Sell 5 Animal Goods (1 Silver)\n2. Sell 10 Crops (Standard: 1 Silver)\n3. SEASONAL SPECIALS\n4. Buy 10 Seeds (2 Silver)\n5. 10 Wheat -> 20 Fodder`;
+    let res = prompt(menu);
+    
     if(res == '1') {
+        let goods = ['milk', 'wool', 'eggs', 'bacon'].filter(g => state.inventory[g] >= 5);
+        let choice = prompt("Sell 5:\n" + goods.map((g,i)=>`${i+1}. ${g}`).join('\n'));
+        let sel = goods[parseInt(choice)-1];
+        if(sel) { state.inventory[sel]-=5; state.inventory.silver++; }
+    }
+    if(res == '2') {
         let crops = Object.keys(CROP_DATA).filter(c => state.inventory[c] >= 10);
-        let cChoice = prompt("Sell 10:\n" + crops.map((c,i)=>`${i+1}. ${c}`).join('\n'));
-        let sel = crops[parseInt(cChoice)-1];
+        let choice = prompt("Sell 10 for 1 Silver:\n" + crops.map((c,i)=>`${i+1}. ${c}`).join('\n'));
+        let sel = crops[parseInt(choice)-1];
         if(sel) { state.inventory[sel]-=10; state.inventory.silver++; }
     }
-    if(res == '2' && state.inventory.silver >= 2) {
-        let sChoice = prompt("Buy Seeds:\n" + Object.keys(CROP_DATA).map((k,i)=>`${i+1}. ${k}`).join('\n'));
-        let sel = Object.keys(CROP_DATA)[parseInt(sChoice)-1];
+    if(res == '3') {
+        if(s === 'Summer' && state.inventory.watermelon >= 1) {
+            let amt = prompt("Watermelons to sell (2 Silver each)?");
+            if(parseInt(amt) <= state.inventory.watermelon) { state.inventory.watermelon -= parseInt(amt); state.inventory.silver += (parseInt(amt)*2); }
+        } else if(s === 'Fall') {
+            let f = ['pumpkin','soybean'].filter(c => state.inventory[c] >= 10);
+            let choice = prompt("Fall Bonus (10 for 2 Silver):\n" + f.map((c,i)=>`${i+1}. ${c}`).join('\n'));
+            let sel = f[parseInt(choice)-1];
+            if(sel) { state.inventory[sel]-=10; state.inventory.silver+=2; }
+        } else if(s === 'Spring') {
+            let sp = ['carrot','cabbage'].filter(c => state.inventory[c] >= 10);
+            let choice = prompt("Spring Bonus (10 for 2 Silver):\n" + sp.map((c,i)=>`${i+1}. ${c}`).join('\n'));
+            let sel = sp[parseInt(choice)-1];
+            if(sel) { state.inventory[sel]-=10; state.inventory.silver+=2; }
+        } else alert("No seasonal specials right now!");
+    }
+    if(res == '4' && state.inventory.silver >= 2) {
+        let choice = prompt("Buy 10 Seeds:\n" + Object.keys(CROP_DATA).map((k,i)=>`${i+1}. ${k}`).join('\n'));
+        let sel = Object.keys(CROP_DATA)[parseInt(choice)-1];
         if(sel) { state.inventory[sel+"_seed"]=(state.inventory[sel+"_seed"]||0)+10; state.inventory.silver-=2; }
     }
-    if(res == '3' && state.inventory.wheat >= 10) { state.inventory.wheat-=10; state.inventory.fodder+=20; }
+    if(res == '5' && state.inventory.wheat >= 10) { state.inventory.wheat-=10; state.inventory.fodder+=20; }
     updateUI();
 }
 
 function sleep() {
     if(player.x === 10 && player.y === 10) {
-        // Truck drives away
-        document.getElementById('trader-truck').style.left = "800px";
+        state.day++; state.time = 0; toggleNight(false);
+        state.season = ['Spring', 'Summer', 'Fall', 'Winter'][Math.floor((state.day-1)/SEASON_DAYS)%4];
         
-        setTimeout(() => {
-            state.day++; state.time = 0; toggleNight(false);
-            state.season = ['Spring', 'Summer', 'Fall', 'Winter'][Math.floor((state.day-1)/SEASON_DAYS)%4];
-            
-            // Re-center truck for next arrival check
-            document.getElementById('trader-truck').style.transition = "none";
-            document.getElementById('trader-truck').style.left = "-100px";
-            setTimeout(() => { 
-                document.getElementById('trader-truck').style.transition = "left 2s ease-in-out";
-                checkTraderArrival(); 
-            }, 50);
-
-            // World updates
-            world.filter(t => t.building === 'pipe').forEach(p => {
-                [{x:0,y:1},{x:0,y:-1},{x:1,y:0},{x:-1,y:0}].forEach(n => {
-                    let target = world.find(tile => tile.x === p.x+n.x && tile.y === p.y+n.y);
-                    if(target) target.watered = 2;
-                });
+        // Pipes
+        world.filter(t => t.building === 'pipe').forEach(p => {
+            [{x:0,y:1},{x:0,y:-1},{x:1,y:0},{x:-1,y:0}].forEach(n => {
+                let target = world.find(tile => tile.x === p.x+n.x && tile.y === p.y+n.y);
+                if(target) target.watered = 2;
             });
-            world.forEach(t => { if(t.crop && t.watered > 0) { t.age++; t.watered--; } });
-            state.animals.filter(a => a.claimed).forEach(a => {
-                if(state.inventory.fodder > 0) { state.inventory[ANIMAL_DATA[a.type].product] = (state.inventory[ANIMAL_DATA[a.type].product] || 0) + 1; state.inventory.fodder--; }
-            });
-            if(state.day % 4 === 0) spawnAnimal();
-            updateUI(); world.forEach(renderTile);
-        }, 1000);
+        });
+        // Crops
+        world.forEach(t => { if(t.crop && t.watered > 0) { t.age++; t.watered--; } });
+        // Animals
+        state.animals.filter(a => a.claimed).forEach(a => {
+            if(state.inventory.fodder > 0) { 
+                state.inventory[ANIMAL_DATA[a.type].product] = (state.inventory[ANIMAL_DATA[a.type].product]||0)+1; 
+                state.inventory.fodder--; 
+            }
+        });
+        if(state.day % 4 === 0) spawnAnimal();
+        updateUI(); world.forEach(renderTile);
     }
 }
 
 function spawnAnimal() {
     let k = Object.keys(ANIMAL_DATA);
-    state.animals.push({ x: Math.floor(Math.random()*18)+1, y: Math.floor(Math.random()*18)+1, claimed: false, type: k[Math.floor(Math.random()*k.length)] });
+    state.animals.push({ 
+        x: Math.floor(Math.random()*18)+1, y: Math.floor(Math.random()*18)+1, 
+        claimed: false, type: k[Math.floor(Math.random()*k.length)] 
+    });
 }
 
 function updateUI() {
@@ -289,8 +304,11 @@ function updateUI() {
     document.getElementById('silver-val').innerText = state.inventory.silver;
     let cap = Math.floor(world.filter(t => t.type === 'pasture').length / 5);
     document.getElementById('cap-val').innerText = `${state.animals.filter(a=>a.claimed).length}/${cap}`;
-    let inv = ""; for(let i in state.inventory) if(state.inventory[i]>0) inv += `<div>${i.replace('_',' ')}: ${state.inventory[i]}</div>`;
-    document.getElementById('inv-list').innerHTML = inv;
+    document.getElementById('trader-truck').style.opacity = (state.day % 3 === 0 && state.season !== 'Winter') ? 1 : 0;
+    
+    let inv = ""; 
+    for(let i in state.inventory) if(state.inventory[i]>0) inv += `<div>${i.replace('_',' ')}: ${state.inventory[i]}</div>`;
+    document.getElementById('inv-list').innerHTML = inv || "Empty";
 }
 
 window.addEventListener('keydown', e => {
